@@ -39,7 +39,8 @@
     if (state.step !== expectedStep || !state.opened || confirmed !== true || state.step === 5) return state;
     return { version: 2, step: state.step + 1, order: state.order || chooseOrder(bit), opened: false };
   }
-  const api = Object.freeze({ KEY, names, fresh, valid, clean, chooseOrder, read, save, markOpened, advance });
+  function canReview(value) { return valid(value) && value.step === 5; }
+  const api = Object.freeze({ KEY, names, fresh, valid, clean, chooseOrder, read, save, markOpened, advance, canReview });
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root) root.BloodSamplingFlow = api;
 })(typeof window !== "undefined" ? window : null);

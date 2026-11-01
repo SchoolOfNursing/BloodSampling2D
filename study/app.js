@@ -9,6 +9,9 @@
   try { storage = window.localStorage; } catch { /* 教材のみの利用は可能 */ }
   let state = F.fresh();
   let storageOk = true;
+  let reviewData = null;
+  let reviewLoading = false;
+  let reviewFailed = false;
   const labels = ["同意・事前質問", "1つ目の体験", "中間質問", "2つ目の体験", "事後質問"];
   const back = '<a class="back-link" href="#/">案内ページに戻る</a>';
   const esc = text => String(text).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -63,7 +66,7 @@
   }
   function body() {
     if (state.step === 5) return "<h2>ご協力ありがとうございました</h2><p>最後のフォームの送信完了画面を確認できていれば、研究参加は終了です。このページの表示自体は、回答の受信を保証するものではありません。</p>" +
-      '<p><a href="#/learn">今後も教材を復習に利用する</a></p><p><a href="#/withdrawal">同意の撤回について</a></p>';
+      '<p>体験とすべての回答が終わった方は、以下から復習できます。</p><ul class="link-list"><li><a href="#/learn">復習用教材を利用する</a></li><li><a href="#/review">知識確認問題の正答・解説を見る</a></li></ul><p class="note">これから研究に参加する方には、正答・解説の共有をお控えください。</p><p><a href="#/withdrawal">同意の撤回について</a></p>';
     const openAttrs = 'class="primary-link" data-action="open-step" data-step="' + state.step + '"';
     if (state.step === 0) return "<h2>同意・事前質問</h2><p>資料1・2を読んだうえで、フォームの説明に従って回答してください。対象条件や同意についてもフォームで確認します。</p>" + documents() +
       "<p>知識確認問題10問と、学年・学習経験等についての質問があります。</p><p>" + link(C.preFormUrl, "同意・事前質問フォームを開く", openAttrs) + "</p>" +
@@ -89,22 +92,54 @@
       '<p class="note">リンクは別タブで開きます。終了後、このページへ戻って次へ進んでください。送信・体験完了は自動判定していません。</p>' +
       '<p class="storage-note">同じブラウザ内に、順番と現在の段階だけを保存します。学生証番号・回答・操作ログはこのページでは収集しません。別端末や別ブラウザでは続きから再開できません。</p><p><a href="#/withdrawal">中止・同意の撤回について</a></p>';
   }
+  function loadReview() {
+    // State is a browser-local navigation guard, not proof of a submitted response.
+    if (!storageOk || !F.canReview(state) || reviewLoading || reviewData) return;
+    reviewLoading = true;
+    const script = document.createElement("script");
+    script.src = "review-content.js?v=20261101";
+    script.onload = () => {
+      reviewLoading = false;
+      const data = window.BloodSamplingReviewData;
+      if (data && Array.isArray(data.questions) && data.questions.length === 10 && Array.isArray(data.sources)) reviewData = data;
+      else reviewFailed = true;
+      reloadState();
+      render(false);
+    };
+    script.onerror = () => { reviewLoading = false; reviewFailed = true; render(false); };
+    document.head.appendChild(script);
+  }
+  function review() {
+    const heading = '<a class="back-link" href="#/participate">終了画面・参加手順へ戻る</a><h1>知識確認問題の正答・解説</h1>';
+    if (!storageOk || !F.canReview(state)) {
+      return heading + '<p>正答・解説は、両モードの体験と事後質問の送信を確認した後に表示します。</p><p>研究参加の手順を最後まで進め、終了画面からお開きください。終了済みの方は、参加時と同じ端末・同じブラウザでお開きください。</p><p><a href="#/participate">研究参加の手順へ戻る</a></p>';
+    }
+    if (!reviewData) return heading + (reviewFailed
+      ? '<p role="alert">正答・解説を読み込めませんでした。通信状態を確認し、このページを再読み込みしてください。</p>'
+      : '<p role="status">正答・解説を読み込んでいます…</p>');
+    return heading + '<p>事前・中間質問票の知識確認問題10問を振り返れます。問番号は知識確認問題内の順番です。選択肢の表示順にかかわらず確認できるよう、正答を文章で示しています。</p>' +
+      '<p class="note">この教材で扱った場面の復習用です。実際の採血では、授業・実習先の手順と使用器具・消毒製品の説明に従ってください。このページでは、ご自身の回答や得点は表示しません。</p><p><a href="#/learn">復習用教材を利用する</a></p>' +
+      reviewData.questions.map(q => '<section class="review-question" aria-labelledby="review-question-' + q.number + '"><h2 id="review-question-' + q.number + '">問' + q.number + '　' + esc(q.title) + '</h2><p>' + esc(q.question) + '</p><h3>正答</h3><p><strong>' + esc(q.answer) + '</strong></p><h3>解説</h3><p>' + esc(q.explanation) + '</p>' +
+        (q.sources.length ? '<p class="note">参考：' + q.sources.map(id => { const source = reviewData.sources.find(s => s.id === id); return source ? link(source.url, source.title) : ""; }).join(" ／ ") + '</p>' : '<p class="note">本教材のシリンジ接続手順に基づく説明です。</p>') + '</section>').join("") +
+      '<section><h2>復習を続ける</h2><p><a href="#/learn">復習用教材を利用する</a></p><p><a href="#/participate">終了画面へ戻る</a></p><p class="note">これから研究に参加する方には、正答・解説の共有をお控えください。</p></section>';
+  }
   function updateButton() {
     const button = document.getElementById("next-step");
     if (button) button.disabled = !storageOk || !state.opened || !document.getElementById("step-confirm")?.checked;
   }
   function render(focus = true) {
     const route = location.hash.startsWith("#/") ? location.hash.slice(2) : "";
-    const routes = { study, learn, participate, withdrawal };
+    const routes = { study, learn, participate, withdrawal, review };
     const isHome = !routes[route];
     home.hidden = !isHome;
     view.hidden = isHome;
     document.getElementById("resume-home").hidden = !storageOk || state.step === 0;
     document.body.dataset.page = isHome ? "home" : route;
-    document.title = (isHome ? "採血手技学習教材・研究のご案内" : { study: "研究の説明と参加手順", learn: "教材のみ利用する", participate: "研究参加の手順", withdrawal: "同意の撤回について" }[route]) + "｜SchoolOfNursing";
+    document.title = (isHome ? "採血手技学習教材・研究のご案内" : { study: "研究の説明と参加手順", learn: "教材のみ利用する", participate: "研究参加の手順", withdrawal: "同意の撤回について", review: "知識確認問題の正答・解説" }[route]) + "｜SchoolOfNursing";
     if (!isHome) view.innerHTML = routes[route]();
     document.getElementById("step-confirm")?.addEventListener("change", updateButton);
     if (focus && (location.hash.startsWith("#/") || !location.hash)) { window.scrollTo(0, 0); main.focus({ preventScroll: true }); }
+    if (route === "review" && storageOk && F.canReview(state) && !reviewData && !reviewLoading && !reviewFailed) loadReview();
   }
   view.addEventListener("click", event => {
     const opener = event.target.closest('[data-action="open-step"]');
