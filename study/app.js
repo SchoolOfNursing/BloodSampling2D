@@ -5,6 +5,12 @@
   const home = document.getElementById("home-view");
   const view = document.getElementById("route-view");
   const main = document.getElementById("main");
+  document.getElementById("skip-to-main")?.addEventListener("click", event => {
+    // Keep the current hash route and form controls; this is focus navigation only.
+    event.preventDefault();
+    main.focus({ preventScroll: true });
+    main.scrollIntoView({ block: "start" });
+  });
   let storage = null;
   try { storage = window.localStorage; } catch { /* 教材のみの利用は可能 */ }
   let state = F.fresh();
